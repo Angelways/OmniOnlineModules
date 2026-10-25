@@ -156,7 +156,7 @@ public sealed class ShopCollectionExport : ModuleBase
     private string ItemName(uint id) => names.GetValueOrDefault(id, "");
     private string WorldName(uint id) => DalamudServices.DataManager.GetExcelSheet<World>()?.GetRowOrDefault(id)?.Name.ExtractText() ?? id.ToString();
 
-    private void Refresh()
+    private bool Refresh()
     {
         try
         {
@@ -173,23 +173,34 @@ public sealed class ShopCollectionExport : ModuleBase
                     .Concat(DalamudServices.DataManager.GetExcelSheet<HousingYardObject>()!.Select(x => x.Item.RowId))
                     .Where(id => id != 0).ToHashSet();
             }
-            characters = ExportCodec.ReadInventory(Path.Combine(ConfigDir, "InventoryCache.json"), ItemName, WorldName,
-                id => sets.GetValueOrDefault(id, Array.Empty<uint>()));
             var player = DalamudServices.PlayerState;
+            var cachePath = Path.Combine(ConfigDir, "InventoryCache.json");
+            characters = File.Exists(cachePath)
+                ? ExportCodec.ReadInventory(cachePath, ItemName, WorldName,
+                    id => sets.GetValueOrDefault(id, Array.Empty<uint>()),
+                    player.IsLoaded ? player.ContentId.ToString() : null)
+                : [];
             if (player.IsLoaded && player.ContentId != 0 && characters.All(x => x.Id != player.ContentId.ToString()))
                 characters.Add(new OwnedCharacter { Id = player.ContentId.ToString(), Name = player.CharacterName,
                     HomeWorldId = player.HomeWorld.RowId, WorldName = WorldName(player.HomeWorld.RowId) });
             if (!initialized) foreach (var c in characters) selected.Add(c.Id);
             initialized = true;
             status = $"已读取 {characters.Count} 个角色。房屋仓库另列数量及依据；雇员上架与部队仓库不计入。";
+            return true;
         }
-        catch (Exception ex) { status = $"读取失败：{ex.Message}"; characters = []; }
+        catch (Exception ex)
+        {
+            status = $"读取失败：{ex.Message}";
+            characters = [];
+            DalamudServices.PluginLog.Error(ex, "Shop character inventory cache failed to load");
+            return false;
+        }
     }
 
     private void BeginExport()
     {
         if (scan is not null) return;
-        Refresh();
+        if (!Refresh()) return;
         if (characters.Count == 0 || selected.Count == 0) { status = "没有选中可导出的角色。"; return; }
         try
         {

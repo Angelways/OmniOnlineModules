@@ -6,10 +6,10 @@
       "Name": "商城物品收录导出",
       "Author": "Angelways",
       "Description": "按角色导出库存与已解锁收录，供商城已获取标记油猴脚本导入。",
-      "Version": "1.2.3",
-      "MinimumOmniVersion": "1.1.6.6",
-      "File": "1.2.3/OmniShopOwned.dll",
-      "Sha256": "A9209F89181069EB09EE353D53181BBE04B677D684024B30E518FE99BD5D4720"
+      "Version": "1.2.4",
+      "MinimumOmniVersion": "1.1.8.1",
+      "File": "1.2.4/OmniShopOwned.dll",
+      "Sha256": "5B7CB3C5301E4F8C6EDCEC32F828E64A712A1149368BDC42DAB4BF968621484A"
     }
   ]
 }

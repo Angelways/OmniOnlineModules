@@ -4,10 +4,10 @@
     <AssemblyName>OmniShopOwned</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.2.3</Version>
+    <Version>1.2.4</Version>
     <PlatformTarget>x64</PlatformTarget>
-    <OmniPath Condition="'$(OmniPath)' == ''">D:\XIVLauncherCN\installedPlugins\OmniToolbox\1.1.6.6</OmniPath>
-    <DalamudPath Condition="'$(DalamudPath)' == ''">D:\XIVLauncherCN\Addon\Hooks\26-10-08-02</DalamudPath>
+    <OmniPath Condition="'$(OmniPath)' == ''">D:\XIVLauncherCN\installedPlugins\OmniToolbox\1.1.8.1</OmniPath>
+    <DalamudPath Condition="'$(DalamudPath)' == ''">D:\XIVLauncherCN\Addon\Hooks\26-10-21-01</DalamudPath>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="OmniToolbox.Common" HintPath="$(OmniPath)\OmniToolbox.Common.dll" Private="false" />

@@ -1,6 +1,6 @@
 param(
-    [string]$OmniPath = 'D:\XIVLauncherCN\installedPlugins\OmniToolbox\1.1.6.6',
-    [string]$DalamudPath = 'D:\XIVLauncherCN\Addon\Hooks\26-10-08-02'
+    [string]$OmniPath = 'D:\XIVLauncherCN\installedPlugins\OmniToolbox\1.1.8.1',
+    [string]$DalamudPath = 'D:\XIVLauncherCN\Addon\Hooks\26-10-21-01'
 )
 $ErrorActionPreference = 'Stop'
 $moduleDirectory = $PSScriptRoot
@@ -26,7 +26,7 @@ $manifest = [ordered]@{ SchemaVersion = 1; Modules = @([ordered]@{
     Author = 'Angelways'
     Description = '按角色导出库存与已解锁收录，供商城已获取标记油猴脚本导入。'
     Version = $version
-    MinimumOmniVersion = '1.1.6.6'
+    MinimumOmniVersion = '1.1.8.1'
     File = "$version/OmniShopOwned.dll"
     Sha256 = $hash
 }) }

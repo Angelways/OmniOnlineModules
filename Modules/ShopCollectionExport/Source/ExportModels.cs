@@ -49,10 +49,11 @@ public static class ExportCodec
     };
 
     public static readonly string[] InventoryFields =
-        ["SaddlebagItems", "RetainerItems", "GlamourDresserItems", "ArmoireItems"];
+        ["InventoryItems", "SaddlebagItems", "RetainerItems", "GlamourDresserItems", "ArmoireItems"];
 
     public static List<OwnedCharacter> ReadInventory(string path, Func<uint, string> itemName,
-        Func<uint, string> worldName, Func<uint, IReadOnlyList<uint>>? setItems = null)
+        Func<uint, string> worldName, Func<uint, IReadOnlyList<uint>>? setItems = null,
+        string? liveCharacterId = null)
     {
         // Omni may hold the file while updating it. We never write to the original cache.
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -61,7 +62,11 @@ public static class ExportCodec
         foreach (var property in json.RootElement.GetProperty("Characters").EnumerateObject())
         {
             var value = property.Value;
-            var world = value.GetProperty("HomeWorldId").GetUInt32();
+            // Omni 1.1.8 uses ID; earlier caches used Id. JSON names are case-sensitive.
+            if (!value.TryGetProperty("HomeWorldID", out var worldValue) &&
+                !value.TryGetProperty("HomeWorldId", out worldValue))
+                throw new InvalidDataException("角色缓存缺少服务器字段 HomeWorldID / HomeWorldId。");
+            var world = worldValue.GetUInt32();
             var character = new OwnedCharacter
             {
                 Id = property.Name,
@@ -73,6 +78,8 @@ public static class ExportCodec
             };
             foreach (var field in InventoryFields)
             {
+                // The logged-in character's inventory is read live by BeginExport instead.
+                if (field == "InventoryItems" && property.Name == liveCharacterId) continue;
                 if (!value.TryGetProperty(field, out var array)) continue;
                 ReadContainer(character, array, field, itemName, setItems);
             }
@@ -88,6 +95,32 @@ public static class ExportCodec
                     if (json.RootElement.TryGetProperty(field, out var value))
                         ReadContainer(housing, value, field, itemName, null);
                 character.HousingItems = housing.Items;
+            }
+        }
+        if (json.RootElement.TryGetProperty("HousingStorerooms", out var storerooms))
+        {
+            foreach (var estate in storerooms.EnumerateObject())
+            {
+                var housing = new OwnedCharacter();
+                foreach (var field in new[] { "InteriorItems", "ExteriorItems" })
+                    if (estate.Value.TryGetProperty(field, out var items))
+                        ReadContainer(housing, items, $"HousingStorerooms:{estate.Name}:{field}", itemName, null);
+                if (!estate.Value.TryGetProperty("CharacterContentIDs", out var ids)) continue;
+                var associatedIds = ids.EnumerateArray().Select(id => id.ToString()).ToHashSet();
+                foreach (var character in result.Where(c => associatedIds.Contains(c.Id)))
+                    foreach (var item in housing.Items)
+                    {
+                        // Merge per estate, keeping shared housing separate from personal items.
+                        var entry = character.HousingItems.Find(x => x.ItemId == item.ItemId);
+                        if (entry is null)
+                        {
+                            entry = new OwnedItem { ItemId = item.ItemId, Name = item.Name };
+                            character.HousingItems.Add(entry);
+                        }
+                        entry.Quantity += item.Quantity;
+                        foreach (var location in item.Locations)
+                            if (!entry.Locations.Contains(location)) entry.Locations.Add(location);
+                    }
             }
         }
         return result;
@@ -106,7 +139,7 @@ public static class ExportCodec
         var rows = EnumerateInventory(value).ToList();
         uint Id(JsonElement r) => (r.ValueKind == JsonValueKind.Number ? r.GetUInt32() : r.GetProperty("ItemID").GetUInt32()) % 1_000_000;
         string? Slot(JsonElement r) => r.ValueKind == JsonValueKind.Object && r.TryGetProperty("SlotIndex", out var slot)
-            ? $"{(r.TryGetProperty("ContainerType", out var type) ? type.ToString() : "")}/{slot}" : null;
+            ? $"{(r.TryGetProperty("HolderID", out var holder) ? holder.ToString() : "")}/{(r.TryGetProperty("ContainerType", out var type) ? type.ToString() : "")}/{slot}" : null;
         foreach (var row in rows)
         {
             var id = Id(row);

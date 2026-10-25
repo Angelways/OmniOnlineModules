@@ -3,8 +3,10 @@
 - 英文入口：`ShopCollectionExport`
 - 程序集：`OmniShopOwned.dll`
 - 作者：Angelways
-- 版本：1.2.3
-- 最低 Omni 版本：1.1.6.6
+- 版本：1.2.4
+- 最低 Omni 版本：1.1.8.1
+
+1.2.4 修复新版缓存 `HomeWorldID` 字段造成的角色读取异常，兼容旧版 `HomeWorldId`；适配 `HousingStorerooms` 房库关联和离线角色背包缓存，防止实时库存重复计数。真实缓存 4 个角色及 29 项导出检查通过；游戏内加载和解锁采集仍需验收。
 
 ## 安装
 
@@ -43,6 +45,6 @@ dotnet build Source/OmniShopOwned.csproj -c Release -p:OmniPath="D:\path\to\Omni
 
 `Publish.ps1` 可构建本模块、复制 DLL 到版本目录并同步清单 SHA256；不会自动提交或推送。发布新版时先提高项目的 `Version`，运行该脚本后检查 Git 差异，将新 DLL 与清单一起发布。保留旧版本 DLL，不修改已发布版本的文件。
 
-清单 `File` 相对本清单目录解析，例如 `1.2.3/OmniShopOwned.dll`。Omni 不需要额外下载宿主 DLL。
+清单 `File` 相对本清单目录解析，例如 `1.2.4/OmniShopOwned.dll`。Omni 不需要额外下载宿主 DLL。
 
 在线更新只替换程序文件。按 Omni 官方更新流程，刷新已订阅清单可下载更高版本，下次启动 Omni 时应用；卸载默认保留配置，普通刷新不会重新安装已卸载模块。
