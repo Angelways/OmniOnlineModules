@@ -10,18 +10,59 @@ using OmniToolbox.Common.Module.Enums;
 using OmniToolbox.Common.Module.Models;
 using OmniToolbox.Host;
 using OmniToolbox.ShopOwned;
+using OmniToolbox.UI;
+using TreeTools.Lifecycle;
 
 namespace OmniToolbox.TreeHouseOnline;
 
-public sealed class ShopCollectionExport : ModuleBase
+[ModuleApiVersion(1)]
+public sealed class ShopCollectionExport : OmniModuleBase
 {
     public override ModuleInfo Info { get; } = new()
     {
-        Title = "商城物品收录导出",
-        Description = "按角色导出库存与已解锁收录，供商城已获取标记油猴脚本导入。",
         Category = ModuleCategory.Item,
         Author = "Angelways"
     };
+
+    public override ModuleLocalization Localization { get; } = ModuleLocalization.Create(
+        new Dictionary<string, string>
+        {
+            ["Ready"] = "登录后自动读取角色列表，也可手动刷新。",
+            ["Title"] = "商城物品收录导出",
+            ["Description"] = "按角色导出库存与已解锁收录，供商城已获取标记油猴脚本导入。",
+            ["Instructions"] = "使用说明：选择好角色后导出JSON文件，然后在浏览器打开商城页面后在脚本中导入文件。",
+            ["Scanning"] = "正在采集收录：已检查 {0} 件物品",
+            ["Refresh"] = "读取 / 刷新角色列表",
+            ["SelectAll"] = "全选",
+            ["ClearSelection"] = "清空选择",
+            ["Export"] = "导出选中角色的收录 JSON",
+            ["ExportFolder"] = "导出文件夹",
+            ["ChooseFolder"] = "选择文件夹…",
+            ["SaveFolder"] = "保存文件夹地址",
+            ["DefaultFolder"] = "恢复默认文件夹",
+            ["ExportLocation"] = "导出位置：{0}",
+            ["OpenFolder"] = "打开导出文件夹",
+            ["CopyPath"] = "复制地址",
+            ["SettingsReadFailed"] = "无法读取导出文件夹设置，暂用默认地址。详情请查看日志。",
+            ["ChooseFolderPrompt"] = "请在 Windows 窗口中选择导出文件夹。",
+            ["ChooseFolderFailed"] = "无法选择文件夹。详情请查看日志。",
+            ["FolderNotCreated"] = "导出文件夹尚未创建，请先导出一次。",
+            ["OpenFolderFailed"] = "无法打开文件夹。详情请查看日志。",
+            ["PathCopied"] = "已复制导出文件夹地址。",
+            ["FolderSaved"] = "导出文件夹地址已保存。",
+            ["SaveFolderFailed"] = "保存地址失败，请检查文件夹地址和访问权限。详情请查看日志。",
+            ["CharactersLoaded"] = "已读取 {0} 个角色。房屋仓库另列数量及依据；雇员上架与部队仓库不计入。",
+            ["ReadFailed"] = "读取失败。详情请查看日志。",
+            ["NoCharacters"] = "没有选中可导出的角色。",
+            ["Capturing"] = "正在采集当前角色的已解锁收录，请保持当前角色登录。",
+            ["ChooseFolderCancelled"] = "已取消选择文件夹。",
+            ["CharacterChanged"] = "角色已切换或退出登录，请重新导出。",
+            ["ExportComplete"] = "导出成功：{0} 个角色，{1} 条收录。请在商城脚本中导入该 JSON。",
+            ["ChatExportComplete"] = "[{0}] {1} 文件：{2}",
+            ["ExportFailed"] = "导出失败。详情请查看日志。",
+            ["FolderDialogTitle"] = "选择商城收录导出文件夹",
+            ["FolderDialogAccept"] = "选择文件夹",
+        });
 
     private readonly HashSet<string> selected = [];
     private List<OwnedCharacter> characters = [];
@@ -29,11 +70,21 @@ public sealed class ShopCollectionExport : ModuleBase
     private IEnumerator<Item>? scan;
     private OwnedCharacter? activeSnapshot;
     private OwnedExport? pending;
-    private string status = "登录后自动读取角色列表，也可手动刷新。";
+    private string statusKey = "Ready";
+    private object[] statusArguments = [];
+    private string Status => Text(statusKey, statusArguments);
+    private string Text(string key, params object[] arguments) => string.Format(OmniLoc.Get(this, key), arguments);
+    private void SetStatus(string key, params object[] arguments) { statusKey = key; statusArguments = arguments; }
     private bool initialized;
     private ulong listedContentId;
     private int scanned;
-    private ExportSettings settings = new();
+    private Settings config = new();
+    private bool configChanged;
+    private sealed class Settings
+    {
+        public string DirectoryPath { get; set; } = "";
+        public bool LegacySettingsImported { get; set; }
+    }
     private string directoryInput = "";
     private string pendingExportPath = "";
     private Task<string?>? folderSelection;
@@ -42,48 +93,68 @@ public sealed class ShopCollectionExport : ModuleBase
     private string ConfigDir => DalamudServices.PluginInterface.GetPluginConfigDirectory();
     private string SettingsPath => Path.Combine(ConfigDir, "ShopCollectionExport.Settings.json");
     private string SnapshotPath => Path.Combine(ConfigDir, "ShopCollectionUnlocks.json");
-    private string ExportDirectory => settings.ResolveDirectory(ConfigDir);
+    private string ExportDirectory => new ExportSettings { DirectoryPath = config.DirectoryPath }.ResolveDirectory(ConfigDir);
     private string ExportPath => Path.Combine(ExportDirectory, "OmniShopOwned.json");
     public override bool HasSettings => true;
 
-    protected override void OnEnable()
+    public override bool ResetSettings()
     {
+        if (config.DirectoryPath.Length == 0) return false;
+        config.DirectoryPath = "";
+        config.LegacySettingsImported = true;
+        directoryInput = ExportDirectory;
+        SetStatus("FolderSaved");
+        return true;
+    }
+
+    protected override void OnStart(FeatureLifetime activation)
+    {
+        SetStatus("Ready");
         try
         {
-            settings = ExportSettings.Load(SettingsPath);
-            directoryInput = settings.ResolveDirectory(ConfigDir);
+            if (!config.LegacySettingsImported)
+            {
+                if (config.DirectoryPath.Length == 0 && File.Exists(SettingsPath))
+                    config.DirectoryPath = ExportSettings.Load(SettingsPath).DirectoryPath;
+                config.LegacySettingsImported = true;
+                configChanged = true;
+            }
+            directoryInput = new ExportSettings { DirectoryPath = config.DirectoryPath }.ResolveDirectory(ConfigDir);
         }
         catch (Exception ex)
         {
-            settings = new ExportSettings();
+            config.DirectoryPath = "";
+            configChanged = true;
             directoryInput = ExportDirectory;
-            status = $"无法读取导出文件夹设置，暂用默认地址：{ex.Message}";
+            SetStatus("SettingsReadFailed");
             DalamudServices.PluginLog.Error(ex, "Shop export directory settings failed to load");
         }
         listedContentId = 0;
-        DalamudServices.Framework.Update += Update;
+        var framework = DalamudServices.Framework;
+        activation.OnStopping(() => framework.Update -= Update);
+        framework.Update += Update;
     }
-    protected override void OnDisable()
+    protected override void OnStop()
     {
-        DalamudServices.Framework.Update -= Update;
         listedContentId = 0;
         scan?.Dispose();
         scan = null;
         pending = null;
         activeSnapshot = null;
         pendingExportPath = "";
+        folderSelection = null;
     }
 
     public override bool DrawSettings()
     {
-        ImGui.TextWrapped("使用说明：选择好角色后导出JSON文件，然后在浏览器打开商城页面后在脚本中导入文件。");
-        if (scan is not null) ImGui.TextUnformatted($"正在采集收录：已检查 {scanned} 件物品");
+        ImGui.TextWrapped(Text("Instructions"));
+        if (scan is not null) ImGui.TextUnformatted(Text("Scanning", scanned));
         else
         {
-            if (ImGui.Button("读取 / 刷新角色列表")) Refresh();
-            if (ImGui.Button("全选")) foreach (var c in characters) selected.Add(c.Id);
+            if (ImGui.Button(Text("Refresh"))) Refresh();
+            if (ImGui.Button(Text("SelectAll"))) foreach (var c in characters) selected.Add(c.Id);
             ImGui.SameLine();
-            if (ImGui.Button("清空选择")) selected.Clear();
+            if (ImGui.Button(Text("ClearSelection"))) selected.Clear();
             foreach (var c in characters)
             {
                 var value = selected.Contains(c.Id);
@@ -93,50 +164,54 @@ public sealed class ShopCollectionExport : ModuleBase
                 }
             }
             ImGui.BeginDisabled(folderSelection is not null);
-            if (ImGui.Button("导出选中角色的收录 JSON")) BeginExport();
+            if (ImGui.Button(Text("Export"))) BeginExport();
             ImGui.EndDisabled();
         }
         ImGui.Separator();
         ImGui.BeginGroup();
-        ImGui.TextWrapped(status);
-        ImGui.TextUnformatted("导出文件夹");
+        ImGui.TextWrapped(Status);
+        ImGui.TextUnformatted(Text("ExportFolder"));
         ImGui.BeginDisabled(scan is not null || folderSelection is not null);
         ImGui.SetNextItemWidth(-1);
         ImGui.InputText("##ExportDirectory", ref directoryInput, 1024);
-        if (ImGui.Button("选择文件夹…"))
+        if (ImGui.Button(Text("ChooseFolder")))
         {
             try
             {
                 var initial = Directory.Exists(directoryInput) ? directoryInput : ExportDirectory;
-                folderSelection = WindowsFolderPicker.SelectAsync(initial, Process.GetCurrentProcess().MainWindowHandle);
-                status = "请在 Windows 窗口中选择导出文件夹。";
+                folderSelection = WindowsFolderPicker.SelectAsync(initial, Process.GetCurrentProcess().MainWindowHandle,
+                    Text("FolderDialogTitle"), Text("FolderDialogAccept"), Activation.CancellationToken);
+                Activation.Track(folderSelection);
+                SetStatus("ChooseFolderPrompt");
             }
-            catch (Exception ex) { status = $"无法选择文件夹：{ex.Message}"; }
+            catch (Exception ex) { SetStatus("ChooseFolderFailed"); DalamudServices.PluginLog.Error(ex, "Folder selection failed"); }
         }
         ImGui.SameLine();
-        if (ImGui.Button("保存文件夹地址")) SaveDirectory(directoryInput);
+        if (ImGui.Button(Text("SaveFolder"))) SaveDirectory(directoryInput);
         ImGui.SameLine();
-        if (ImGui.Button("恢复默认文件夹")) SaveDirectory("");
+        if (ImGui.Button(Text("DefaultFolder"))) SaveDirectory("");
         ImGui.EndDisabled();
-        ImGui.TextWrapped($"导出位置：{ExportPath}");
-        if (ImGui.Button("打开导出文件夹"))
+        ImGui.TextWrapped(Text("ExportLocation", ExportPath));
+        if (ImGui.Button(Text("OpenFolder")))
         {
             try
             {
-                if (!Directory.Exists(ExportDirectory)) status = "导出文件夹尚未创建，请先导出一次。";
+                if (!Directory.Exists(ExportDirectory)) SetStatus("FolderNotCreated");
                 else Process.Start(new ProcessStartInfo("explorer.exe", File.Exists(ExportPath)
                     ? $"/select,\"{ExportPath}\"" : $"\"{ExportDirectory}\"") { UseShellExecute = true });
             }
-            catch (Exception ex) { status = $"无法打开文件夹：{ex.Message}"; }
+            catch (Exception ex) { SetStatus("OpenFolderFailed"); DalamudServices.PluginLog.Error(ex, "Opening export folder failed"); }
         }
         ImGui.SameLine();
-        if (ImGui.Button("复制地址"))
+        if (ImGui.Button(Text("CopyPath")))
         {
             ImGui.SetClipboardText(ExportDirectory);
-            status = "已复制导出文件夹地址。";
+            SetStatus("PathCopied");
         }
         ImGui.EndGroup();
-        return false;
+        var changed = configChanged;
+        configChanged = false;
+        return changed;
     }
 
     private void SaveDirectory(string path)
@@ -145,12 +220,15 @@ public sealed class ShopCollectionExport : ModuleBase
         {
             var next = new ExportSettings { DirectoryPath = path.Trim() };
             var directory = next.ResolveDirectory(ConfigDir);
-            next.Save(SettingsPath);
-            settings = next;
+            if (config.DirectoryPath != next.DirectoryPath)
+            {
+                config.DirectoryPath = next.DirectoryPath;
+                configChanged = true;
+            }
             directoryInput = directory;
-            status = "导出文件夹地址已保存。";
+            SetStatus("FolderSaved");
         }
-        catch (Exception ex) { status = $"保存地址失败：{ex.Message}"; }
+        catch (Exception ex) { SetStatus("SaveFolderFailed"); DalamudServices.PluginLog.Error(ex, "Saving export folder failed"); }
     }
 
     private string ItemName(uint id) => names.GetValueOrDefault(id, "");
@@ -185,12 +263,12 @@ public sealed class ShopCollectionExport : ModuleBase
                     HomeWorldId = player.HomeWorld.RowId, WorldName = WorldName(player.HomeWorld.RowId) });
             if (!initialized) foreach (var c in characters) selected.Add(c.Id);
             initialized = true;
-            status = $"已读取 {characters.Count} 个角色。房屋仓库另列数量及依据；雇员上架与部队仓库不计入。";
+            SetStatus("CharactersLoaded", characters.Count);
             return true;
         }
         catch (Exception ex)
         {
-            status = $"读取失败：{ex.Message}";
+            SetStatus("ReadFailed");
             characters = [];
             DalamudServices.PluginLog.Error(ex, "Shop character inventory cache failed to load");
             return false;
@@ -201,7 +279,7 @@ public sealed class ShopCollectionExport : ModuleBase
     {
         if (scan is not null) return;
         if (!Refresh()) return;
-        if (characters.Count == 0 || selected.Count == 0) { status = "没有选中可导出的角色。"; return; }
+        if (characters.Count == 0 || selected.Count == 0) { SetStatus("NoCharacters"); return; }
         try
         {
             pendingExportPath = ExportPath;
@@ -238,7 +316,7 @@ public sealed class ShopCollectionExport : ModuleBase
             }
             scanned = 0;
             scan = DalamudServices.DataManager.GetExcelSheet<Item>()!.GetEnumerator();
-            status = "正在采集当前角色的已解锁收录，请保持当前角色登录。";
+            SetStatus("Capturing");
         }
         catch (Exception ex) { Fail(ex); }
     }
@@ -262,16 +340,16 @@ public sealed class ShopCollectionExport : ModuleBase
             {
                 var directory = selection.GetAwaiter().GetResult();
                 if (directory is not null) SaveDirectory(directory);
-                else status = "已取消选择文件夹。";
+                else SetStatus("ChooseFolderCancelled");
             }
-            catch (Exception ex) { status = $"选择文件夹失败：{ex.Message}"; }
+            catch (Exception ex) { SetStatus("ChooseFolderFailed"); DalamudServices.PluginLog.Error(ex, "Folder selection failed"); }
         }
         if (scan is null || activeSnapshot is null) return;
         try
         {
             var player = DalamudServices.PlayerState;
             if (!player.IsLoaded || player.ContentId.ToString() != activeSnapshot.Id)
-                throw new InvalidOperationException("角色已切换或退出登录，请重新导出。");
+                throw new InvalidOperationException("CharacterChanged");
             // Bound the work per frame; do not access game data from a background thread.
             for (var i = 0; i < 256; i++)
             {
@@ -313,8 +391,8 @@ public sealed class ShopCollectionExport : ModuleBase
         }
         foreach (var c in pending.Characters) c.Items = c.Items.OrderBy(x => x.ItemId).ToList();
         ExportCodec.WriteAtomic(pendingExportPath, pending);
-        status = $"导出成功：{pending.Characters.Count} 个角色，{pending.Characters.Sum(x => x.Items.Count)} 条收录。请在商城脚本中导入该 JSON。";
-        DalamudServices.ChatGUI.Print($"[商城收录导出] {status} 文件：{pendingExportPath}");
+        SetStatus("ExportComplete", pending.Characters.Count, pending.Characters.Sum(x => x.Items.Count));
+        DalamudServices.ChatGUI.Print(Text("ChatExportComplete", Text("Title"), Status, pendingExportPath));
         pending = null; activeSnapshot = null;
         pendingExportPath = "";
     }
@@ -339,7 +417,7 @@ public sealed class ShopCollectionExport : ModuleBase
     {
         scan?.Dispose(); scan = null; pending = null; activeSnapshot = null;
         pendingExportPath = "";
-        status = $"导出失败：{ex.Message}";
+        SetStatus(ex is InvalidOperationException { Message: "CharacterChanged" } ? "CharacterChanged" : "ExportFailed");
         DalamudServices.PluginLog.Error(ex, "Shop collection export failed");
     }
 }

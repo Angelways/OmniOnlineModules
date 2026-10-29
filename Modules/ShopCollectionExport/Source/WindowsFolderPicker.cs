@@ -4,52 +4,82 @@ namespace OmniToolbox.ShopOwned;
 
 internal static class WindowsFolderPicker
 {
-    public static Task<string?> SelectAsync(string initialDirectory, nint owner)
+    public static Task<string?> SelectAsync(string initialDirectory, nint owner,
+        string title, string acceptLabel, CancellationToken cancellationToken)
     {
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        // The native Shell dialog needs STA; never block Dalamud's framework/render thread.
+        // Keep COM on its own STA. Cancellation closes only windows owned by this picker thread.
         var thread = new Thread(() =>
         {
             IFileDialog? dialog = null;
             IShellItem? initial = null;
             IShellItem? result = null;
+            string? selected = null;
+            Exception? error = null;
             var initialized = false;
+            var threadId = GetCurrentThreadId();
+            using var cancellationMonitor = new Timer(_ =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    EnumThreadWindows(threadId, (window, _) => { PostMessage(window, 0x0010, 0, 0); return true; }, 0);
+            }, null, 0, 100);
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 Marshal.ThrowExceptionForHR(CoInitializeEx(0, 2));
                 initialized = true;
                 var type = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"), true)!;
                 dialog = (IFileDialog)Activator.CreateInstance(type)!;
-                dialog.SetOptions(0x20 | 0x40 | 0x800 | 0x8); // PICKFOLDERS, FORCEFILESYSTEM, PATHMUSTEXIST, NOCHANGEDIR
-                dialog.SetTitle("选择商城收录导出文件夹");
-                dialog.SetOkButtonLabel("选择文件夹");
+                dialog.SetOptions(0x20 | 0x40 | 0x800 | 0x8);
+                dialog.SetTitle(title);
+                dialog.SetOkButtonLabel(acceptLabel);
                 if (Directory.Exists(initialDirectory))
                 {
                     var iid = typeof(IShellItem).GUID;
                     if (SHCreateItemFromParsingName(initialDirectory, 0, ref iid, out initial) >= 0)
                         dialog.SetFolder(initial!);
                 }
+                cancellationToken.ThrowIfCancellationRequested();
                 var hr = dialog.Show(owner);
-                if (hr == unchecked((int)0x800704C7)) { completion.SetResult(null); return; }
-                Marshal.ThrowExceptionForHR(hr);
-                dialog.GetResult(out result);
-                result.GetDisplayName(0x80058000, out var path); // SIGDN_FILESYSPATH
-                try { completion.SetResult(Marshal.PtrToStringUni(path)); }
-                finally { Marshal.FreeCoTaskMem(path); }
+                if (hr != unchecked((int)0x800704C7))
+                {
+                    Marshal.ThrowExceptionForHR(hr);
+                    dialog.GetResult(out result);
+                    result.GetDisplayName(0x80058000, out var path);
+                    try { selected = Marshal.PtrToStringUni(path); }
+                    finally { Marshal.FreeCoTaskMem(path); }
+                }
             }
-            catch (Exception ex) { completion.TrySetException(ex); }
+            catch (Exception ex) { error = ex; }
             finally
             {
-                if (result is not null) Marshal.FinalReleaseComObject(result);
-                if (initial is not null) Marshal.FinalReleaseComObject(initial);
-                if (dialog is not null) Marshal.FinalReleaseComObject(dialog);
-                if (initialized) CoUninitialize();
+                try
+                {
+                    if (result is not null) Marshal.FinalReleaseComObject(result);
+                    if (initial is not null) Marshal.FinalReleaseComObject(initial);
+                    if (dialog is not null) Marshal.FinalReleaseComObject(dialog);
+                }
+                catch (Exception ex) { error ??= ex; }
+                finally { if (initialized) CoUninitialize(); }
             }
+            cancellationMonitor.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            // Complete only after native cleanup, so FeatureLifetime can safely drain this task.
+            if (cancellationToken.IsCancellationRequested) completion.TrySetCanceled(cancellationToken);
+            else if (error is not null) completion.TrySetException(error);
+            else completion.TrySetResult(selected);
         }) { IsBackground = true, Name = "OmniShopOwned Folder Picker" };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         return completion.Task;
     }
+
+    private delegate bool EnumWindowsCallback(nint window, nint parameter);
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")]
+    private static extern bool EnumThreadWindows(uint threadId, EnumWindowsCallback callback, nint parameter);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
 
     [DllImport("ole32.dll")]
     private static extern int CoInitializeEx(nint reserved, uint flags);

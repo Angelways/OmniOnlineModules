@@ -1,0 +1,21 @@
+{
+  "SchemaVersion": 1,
+  "Modules": [
+    {
+      "InternalName": "ShopCollectionExport",
+      "Author": "Angelways",
+      "RepositoryURL": "https://github.com/Angelways/OmniOnlineModules",
+      "Version": "1.3.0",
+      "ApiVersion": 1,
+      "MinimumOmniVersion": "1.1.8.2",
+      "File": "Modules/ShopCollectionExport/1.3.0/ShopCollectionExport.dll",
+      "Sha256": "3C25CC0EAA8265400AD1933A3C1ED857650758351166C5BC469C8952CC04A225",
+      "Localization": {
+        "Source": {
+          "Title": "商城物品收录导出",
+          "Description": "按角色导出库存与已解锁收录，供商城已获取标记油猴脚本导入。"
+        }
+      }
+    }
+  ]
+}

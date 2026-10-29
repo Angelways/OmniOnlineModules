@@ -1,50 +1,47 @@
 # 商城物品收录导出
 
-- 英文入口：`ShopCollectionExport`
-- 程序集：`OmniShopOwned.dll`
+- 模块入口 / DLL：`ShopCollectionExport` / `ShopCollectionExport.dll`
 - 作者：Angelways
-- 版本：1.2.4
-- 最低 Omni 版本：1.1.8.1
+- 版本：1.3.0；API：1；最低 Omni：1.1.8.2
+- 构建基线：Omni 1.1.8.7、Dalamud CN API 15、.NET 10
 
-1.2.4 修复新版缓存 `HomeWorldID` 字段造成的角色读取异常，兼容旧版 `HomeWorldId`；适配 `HousingStorerooms` 房库关联和离线角色背包缓存，防止实时库存重复计数。真实缓存 4 个角色及 29 项导出检查通过；游戏内加载和解锁采集仍需验收。
+## 1.3.0 更新
 
-## 安装
+迁移新版模块基类、API 声明、生命周期与本地化。事件在 `FeatureLifetime` 中登记解绑，文件夹对话框在停用时取消并等待释放；重复启停不累积回调。用户界面、状态和文件夹窗口标题均从模块词条读取，繁体由 Omni 生成。
 
-在 Omni 的在线模块设置中添加：
+使用内嵌 `Settings` 与宿主绑定的 `config`。首次启用从原 `ShopCollectionExport.Settings.json` 读取导出路径，保留旧文件作迁移备份；后续保存及恢复默认交给宿主管理，不重新读取旧值覆盖新设置。`ShopCollectionUnlocks.json` 和导出的 `OmniShopOwned.json` 格式不变。
 
-```text
-https://raw.githubusercontent.com/Angelways/OmniOnlineModules/main/Modules/ShopCollectionExport/TreeHouseModules.json
-```
+DLL 更名为 `ShopCollectionExport.dll`，在线模块标识仍是 `ShopCollectionExport`。每个文件仅包含一个可实例化模块。旧版本 DLL 保留，不覆盖已发布版本。
 
-首次安装后手动启用。不要同时加载同名本地模块与在线模块；从本地切换时只需移除旧加载路径，保留原配置文件和快照。
+## 安装与使用
 
-## 使用
+在 Omni 在线模块设置中添加 `https://github.com/Angelways/OmniOnlineModules`，首次安装后手动启用。原模块 raw 清单地址继续维护，无需额外添加备用链接。若旧订阅记录不兼容，按宿主提示重新建立仓库记录，保留现有配置。
 
-1. 登录后模块静默读取角色列表，已登录时启用也会读取；可点击“读取 / 刷新角色列表”。
-2. 选择需要导出的角色，然后点击“导出选中角色的收录 JSON”。解锁采集仅针对当前登录角色；其他角色需分别登录并手动导出。
-3. 在角色列表下设置导出文件夹，可以选择文件夹、输入完整路径或恢复默认位置。默认在 Omni 配置目录的 `Exports` 中。设置自动保存，导出时创建文件夹。
-4. 使用“打开导出文件夹”或“复制地址”找到 `OmniShopOwned.json`，再在浏览器的“商城道具收录”独立窗口中导入并选择角色。
+1. 登录后静默读取角色列表，也可点击“读取 / 刷新角色列表”。
+2. 选择角色，点击“导出选中角色的收录 JSON”。只采集当前登录角色的解锁；其他角色需分别登录并手动导出。
+3. 选择或输入完整导出文件夹地址；默认在 Omni 配置目录的 `Exports` 中。手动导出时创建目录。
+4. 在浏览器商城收录面板导入 `OmniShopOwned.json` 并选择角色。商城合集脚本 3.2.1 已更新为 813 件官方商品。
 
-模块不会在启用或登录时自动采集解锁或导出，不提供自动导出指令。退出或切换角色时中止未完成的当前采集。
+模块启用及登录不会自动导出。切换角色、退出登录或停用会中止未完成采集。从旧本地版本切换时移除 Omni 中旧 `OmniShopOwned.dll` 路径，避免同名模块重复加载；新 DLL 仍由 Omni 本地/在线模块系统加载。
 
-## 数据与兼容
+## 数据范围
 
-读取 Omni 库存快照；当前角色额外读取背包、兵装库、装备和坐骑、宠物、表情、发型、配饰、陆行鸟装甲及乐谱等永久解锁状态。房屋仓库另列，不混入个人库存；共享房库快照不代表角色独占。雇员上架物品和部队仓库不计入。
+读取 Omni 库存快照；当前角色额外读取背包、兵装库、装备以及坐骑、宠物、表情、发型、配饰、陆行鸟装甲和乐谱等永久解锁。遍历当前客户端 Item 表，因此新品无需硬编码物品白名单。
 
-其他角色没有采集的解锁状态不能从库存快照推断。快照可能过期；浏览器中的“已获取”表示已解锁或快照持有，不表示商城购买历史。
+房屋仓库另列，不混入个人库存；共享房库不表示角色独占。雇员上架物品与部队仓库不计入。未登录采集的其他角色解锁不能由库存推断；缓存可能过期，收录也不表示商城购买历史。
 
-使用原有 `ShopCollectionExport.Settings.json` 保存导出路径、`ShopCollectionUnlocks.json` 保存角色解锁快照。模块不联网、不修改 `InventoryCache.json`。本仓库不包含个人角色、库存快照、配置文件或导出 JSON。
+模块不联网，不修改 `InventoryCache.json`。仓库及发布包不包含个人角色、库存、配置或导出文件。
 
 ## 构建与发布
 
-源码在 `Source`。本机默认引用路径为 `D:\XIVLauncherCN`；其他安装环境可指定宿主程序集路径：
-
 ```powershell
-dotnet build Source/OmniShopOwned.csproj -c Release -p:OmniPath="D:\path\to\Omni" -p:DalamudPath="D:\path\to\Dalamud"
+./Publish.ps1
+# 其他安装路径：
+./Publish.ps1 -OmniPath 'D:\path\to\Omni' -DalamudPath 'D:\path\to\Dalamud'
 ```
 
-`Publish.ps1` 可构建本模块、复制 DLL 到版本目录并同步清单 SHA256；不会自动提交或推送。发布新版时先提高项目的 `Version`，运行该脚本后检查 Git 差异，将新 DLL 与清单一起发布。保留旧版本 DLL，不修改已发布版本的文件。
+脚本编译、运行契约/生命周期与导出检查、复制版本 DLL、更新根清单和原模块清单，并在 `E:\WorkPlace\Releases\OmniOnlineModules` 生成可加载目录及 ZIP 备份。自定义位置可传 `-ReleaseRoot`。脚本不执行 Git 操作；发布前递增项目版本，核对变更后提交 DLL 与清单。最终清单使用 `RepositoryURL`、`ApiVersion`、`Localization.Source` 等新版必填字段，`File` 相对仓库根目录。
 
-清单 `File` 相对本清单目录解析，例如 `1.2.4/OmniShopOwned.dll`。Omni 不需要额外下载宿主 DLL。
+发布目录内直接加载 `ShopCollectionExport.dll`；配套 `TreeHouseModules.json` 和相同相对路径的 DLL 用于清单校验与备份。Common、TreeTools、OmenTools、Dalamud 和 Lumina 均由宿主提供，按官方要求不打包共享依赖。
 
-在线更新只替换程序文件。按 Omni 官方更新流程，刷新已订阅清单可下载更高版本，下次启动 Omni 时应用；卸载默认保留配置，普通刷新不会重新安装已卸载模块。
+验证覆盖宿主 API 契约、完整简繁词库、旧路径迁移、宿主配置保存恢复、重复启停及原生对话框取消，以及原有 29 项导出检查（含真实库存缓存时）。自动化服务为模拟对象；当前游戏进程内的在线安装、实际加载和解锁采集尚需验收。
