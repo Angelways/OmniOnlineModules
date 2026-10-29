@@ -18,7 +18,7 @@ https://github.com/Angelways/OmniOnlineModules
 https://raw.githubusercontent.com/Angelways/OmniOnlineModules/main/Modules/ShopCollectionExport/TreeHouseModules.json
 ```
 
-Omni 会自动处理 GitHub API 到 raw 的回退。根清单与原模块清单均使用新格式，模块文件路径相对仓库根目录。刷新仓库并按 Omni 的更新提示应用；首次安装后在“树树妙妙屋 → 在线”中手动启用。旧安装记录若被新版 Omni 提示不兼容，请使用上述仓库地址重新建立记录，保留用户配置。
+Omni 会自动处理 GitHub API 到 raw 的回退。根清单与原模块清单均使用新格式，`File` 分别相对各清单所在目录；两种订阅均解析到同一 DLL。刷新仓库并按 Omni 的更新提示应用；首次安装后在“树树妙妙屋 → 在线”中手动启用。旧安装记录若被新版 Omni 提示不兼容，请使用上述仓库地址重新建立记录，保留用户配置。
 
 1.3.0 使用 `OmniModuleBase`、`ModuleApiVersion(1)`、`FeatureLifetime` 和模块内 `ModuleLocalization.Create`，提供完整简体源词条及宿主生成的繁体。配置交由宿主绑定的 `Settings/config` 管理，首次启用导入旧导出路径；保留原解锁快照及导出格式。DLL 更名为 `ShopCollectionExport.dll`，与入口类型及清单 InternalName 一致。共享依赖由 Omni 提供，不随模块打包。
 
@@ -27,6 +27,10 @@ Omni 会自动处理 GitHub API 到 raw 的回退。根清单与原模块清单�
 从旧本地模块切换时，在 Omni 本地模块列表移除旧的 `OmniShopOwned.dll` 路径，避免同名模块重复加载。新 DLL 是 Omni 模块，需要由 Omni 加载。
 
 详细行为、构建命令和验证范围见 [模块说明](Modules/ShopCollectionExport/README.md)。
+
+## 安装路径修正
+
+已修复 1.3.0 旧 raw 订阅入口因目录重复导致下载返回 404 的问题。DLL、版本和 SHA256 未变，只修正子目录清单的相对路径；根清单保持原路径。在 Omni 在线模块页面刷新已有仓库清单后，再点击安装，无需删除配置或改用新订阅。发布时增加双入口地址解析和摘要检查。
 
 ## 验证
 

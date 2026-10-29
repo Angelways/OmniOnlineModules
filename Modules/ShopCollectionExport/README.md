@@ -13,6 +13,10 @@
 
 DLL 更名为 `ShopCollectionExport.dll`，在线模块标识仍是 `ShopCollectionExport`。每个文件仅包含一个可实例化模块。旧版本 DLL 保留，不覆盖已发布版本。
 
+## 安装路径修正
+
+1.3.0 的旧 raw 订阅入口曾把根清单路径重复附加到子目录，导致下载返回 404；现已修正。DLL、版本及 SHA256 均不变。请先刷新已有仓库清单，再安装模块；无需移除订阅或删除配置。
+
 ## 安装与使用
 
 在 Omni 在线模块设置中添加 `https://github.com/Angelways/OmniOnlineModules`，首次安装后手动启用。原模块 raw 清单地址继续维护，无需额外添加备用链接。若旧订阅记录不兼容，按宿主提示重新建立仓库记录，保留现有配置。
@@ -40,8 +44,10 @@ DLL 更名为 `ShopCollectionExport.dll`，在线模块标识仍是 `ShopCollect
 ./Publish.ps1 -OmniPath 'D:\path\to\Omni' -DalamudPath 'D:\path\to\Dalamud'
 ```
 
-脚本编译、运行契约/生命周期与导出检查、复制版本 DLL、更新根清单和原模块清单，并在 `E:\WorkPlace\Releases\OmniOnlineModules` 生成可加载目录及 ZIP 备份。自定义位置可传 `-ReleaseRoot`。脚本不执行 Git 操作；发布前递增项目版本，核对变更后提交 DLL 与清单。最终清单使用 `RepositoryURL`、`ApiVersion`、`Localization.Source` 等新版必填字段，`File` 相对仓库根目录。
+脚本编译、运行契约/生命周期与导出检查、复制版本 DLL、更新根清单和原模块清单，并在 `E:\WorkPlace\Releases\OmniOnlineModules` 生成可加载目录及 ZIP 备份。自定义位置可传 `-ReleaseRoot`。脚本不执行 Git 操作；发布前递增项目版本，核对变更后提交 DLL 与清单。最终清单使用 `RepositoryURL`、`ApiVersion`、`Localization.Source` 等新版必填字段，`File` 相对各清单所在目录：根清单填写 `Modules/ShopCollectionExport/<版本>/ShopCollectionExport.dll`，原子目录清单填写 `<版本>/ShopCollectionExport.dll`。两者最终下载同一文件。
 
 发布目录内直接加载 `ShopCollectionExport.dll`；配套 `TreeHouseModules.json` 和相同相对路径的 DLL 用于清单校验与备份。Common、TreeTools、OmenTools、Dalamud 和 Lumina 均由宿主提供，按官方要求不打包共享依赖。
 
 验证覆盖宿主 API 契约、完整简繁词库、旧路径迁移、宿主配置保存恢复、重复启停及原生对话框取消，以及原有 29 项导出检查（含真实库存缓存时）。自动化服务为模拟对象；当前游戏进程内的在线安装、实际加载和解锁采集尚需验收。
+
+清单回归检查：`./Tests/ManifestChecks.ps1`；推送后可用 `./Tests/ManifestChecks.ps1 -Online -Revision <提交或分支>` 逐个下载清单与 DLL 并验证摘要。

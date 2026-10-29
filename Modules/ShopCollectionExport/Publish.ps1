@@ -42,10 +42,13 @@ $manifest = [ordered]@{ SchemaVersion = 1; Modules = @([ordered]@{
     } }
 }) }
 $json = ($manifest | ConvertTo-Json -Depth 7) + "`n"
-# Preserve existing subscriptions and support adding the repository URL directly.
-foreach ($path in @((Join-Path $moduleDirectory 'TreeHouseModules.json'), (Join-Path $repositoryDirectory 'TreeHouseModules.json'))) {
-    [IO.File]::WriteAllText($path, $json, [Text.UTF8Encoding]::new($false))
-}
+# Omni resolves File against the actual manifest URL, including direct raw subscriptions.
+[IO.File]::WriteAllText((Join-Path $repositoryDirectory 'TreeHouseModules.json'), $json, [Text.UTF8Encoding]::new($false))
+$manifest.Modules[0].File = "$version/ShopCollectionExport.dll"
+$moduleJson = ($manifest | ConvertTo-Json -Depth 7) + "`n"
+[IO.File]::WriteAllText((Join-Path $moduleDirectory 'TreeHouseModules.json'), $moduleJson, [Text.UTF8Encoding]::new($false))
+& (Join-Path $moduleDirectory 'Tests\ManifestChecks.ps1')
+if (!$?) { throw 'Manifest URL/path checks failed.' }
 $releaseDirectory = Join-Path $ReleaseRoot "ShopCollectionExport-$version"
 $releaseDll = Join-Path $releaseDirectory 'ShopCollectionExport.dll'
 if ((Test-Path -LiteralPath $releaseDll) -and (Get-FileHash $releaseDll -Algorithm SHA256).Hash -ne $hash) {
